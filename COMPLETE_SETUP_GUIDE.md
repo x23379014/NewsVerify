@@ -82,7 +82,7 @@ git add .
 git status
 
 # Create initial commit
-git commit -m "Initial commit: NewsVerify fake news detection system"
+git commit -m "Initial commit"
 
 # View commit history
 git log --oneline
