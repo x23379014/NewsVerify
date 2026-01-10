@@ -73,9 +73,10 @@ def train_on_sagemaker(
     )
     
     # Define input data channels
+    # Note: content_type doesn't matter here because train_sagemaker.py loads .npz files directly
     train_input = sagemaker.inputs.TrainingInput(
         s3_data=f'{s3_data_path}',
-        content_type='text/csv'
+        content_type='application/x-npz'  # Changed to match actual data format
     )
     
     # Start training job
@@ -96,7 +97,7 @@ if __name__ == '__main__':
                        help='S3 bucket name')
     parser.add_argument('--data-path', type=str, default='processed_data',
                        help='Local path to processed data')
-    parser.add_argument('--instance-type', type=str, default='ml.m5.xlarge',
+    parser.add_argument('--instance-type', type=str, default='ml.m4.xlarge',
                        help='EC2 instance type for training')
     parser.add_argument('--role', type=str, default=None,
                        help='SageMaker execution role ARN')

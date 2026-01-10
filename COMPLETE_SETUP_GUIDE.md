@@ -241,8 +241,11 @@ aws s3 ls
 # Upload processed data (for training)
 aws s3 cp processed_data/ s3://newsverify-models-YOUR_UNIQUE_ID/training_data/ --recursive
 
+aws s3 cp processed_data/ s3://newsverify-models-2026/training_data/ --recursive
 # Verify upload
 aws s3 ls s3://newsverify-models-YOUR_UNIQUE_ID/training_data/
+
+aws s3 ls s3://newsverify-models-2026/training_data/
 ```
 
 ### Phase 4: Set Up IAM Roles
@@ -261,8 +264,9 @@ aws s3 ls s3://newsverify-models-YOUR_UNIQUE_ID/training_data/
 7. Role name: `SageMakerExecutionRole`
 8. Click "Create role"
 9. **Copy the Role ARN** (looks like: `arn:aws:iam::123456789012:role/SageMakerExecutionRole`)
+arn:aws:iam::587821825538:role/SageMakerExecutionRole
 
-#### Step 8: Create EC2 Instance Profile (for Elastic Beanstalk)
+#### Step 8: Create EC2 Instance Profile (for EC2 Deployment)
 
 1. In IAM Console → "Roles" → "Create role"
 2. Select "AWS service" → "EC2"
@@ -273,7 +277,8 @@ aws s3 ls s3://newsverify-models-YOUR_UNIQUE_ID/training_data/
 5. Click "Next"
 6. Role name: `NewsVerify-EC2-Role`
 7. Click "Create role"
-8. **Note the Role ARN** for later
+8. **Note the Role ARN** for later 
+arn:aws:iam::587821825538:role/NewsVerify-EC2-Role
 
 ### Phase 5: Train Model on SageMaker
 
@@ -289,6 +294,8 @@ tar -czf training_code.tar.gz training_code/
 
 # Upload to S3
 aws s3 cp training_code.tar.gz s3://newsverify-models-YOUR_UNIQUE_ID/code/training_code.tar.gz
+
+aws s3 cp training_code.tar.gz s3://newsverify-models-2026/code/training_code.tar.gz
 ```
 
 #### Step 10: Train Model on SageMaker
@@ -297,10 +304,10 @@ aws s3 cp training_code.tar.gz s3://newsverify-models-YOUR_UNIQUE_ID/code/traini
 
 ```bash
 python scripts/sagemaker_train.py \
-    --bucket newsverify-models-YOUR_UNIQUE_ID \
+    --bucket newsverify-models-2026 \
     --data-path processed_data \
     --instance-type ml.m5.xlarge \
-    --role arn:aws:iam::YOUR_ACCOUNT_ID:role/SageMakerExecutionRole
+    --role arn:aws:iam::587821825538:role/SageMakerExecutionRole
 ```
 
 **Option B: Using AWS Console**
@@ -308,7 +315,7 @@ python scripts/sagemaker_train.py \
 1. Go to [SageMaker Console](https://console.aws.amazon.com/sagemaker/)
 2. Click "Training" → "Training jobs" → "Create training job"
 3. Configure:
-   - **Job name**: `newsverify-training-YYYYMMDD`
+   - **Job name**: `newsverify-training-20260109`
    - **Algorithm**: Custom (use your training script)
    - **Input data**: `s3://newsverify-models-YOUR_UNIQUE_ID/training_data/`
    - **Output location**: `s3://newsverify-models-YOUR_UNIQUE_ID/models/`
@@ -329,6 +336,12 @@ After training completes:
 # Download model
 aws s3 cp s3://newsverify-models-YOUR_UNIQUE_ID/models/TRAINING_JOB_NAME/output/model.tar.gz ./model.tar.gz
 
+aws s3 cp s3://sagemaker-us-east-1-587821825538/sagemaker-xgboost-2026-01-09-15-23-50-863/output/model.tar.gz
+
+
+(venv) nikhiltamatta@Nikhils-MacBook-Air NewsVerify % aws s3 cp s3://sagemaker-us-east-1-587821825538/sagemaker-xgboost-2026-01-09-15-23-50-863/output/model.tar.gz .
+download: s3://sagemaker-us-east-1-587821825538/sagemaker-xgboost-2026-01-09-15-23-50-863/output/model.tar.gz to ./model.tar.gz
+
 # Extract
 tar -xzf model.tar.gz
 
@@ -346,132 +359,94 @@ aws s3 cp processed_data/tfidf_vectorizer.pkl s3://newsverify-models-YOUR_UNIQUE
 aws s3 cp processed_data/label_encoder.pkl s3://newsverify-models-YOUR_UNIQUE_ID/models/label_encoder.pkl
 aws s3 cp processed_data/stat_feature_names.pkl s3://newsverify-models-YOUR_UNIQUE_ID/models/stat_feature_names.pkl
 
+
+aws s3 cp models/model.pkl s3://newsverify-models-2026/models/model.pkl
+aws s3 cp models/tfidf_vectorizer.pkl s3://newsverify-models-2026/models/tfidf_vectorizer.pkl
+aws s3 cp models/label_encoder.pkl s3://newsverify-models-2026/models/label_encoder.pkl
+aws s3 cp models/stat_feature_names.pkl s3://newsverify-models-2026/models/stat_feature_names.pkl
+
 # Verify upload
 aws s3 ls s3://newsverify-models-YOUR_UNIQUE_ID/models/
+
+aws s3 ls s3://newsverify-models-2026/models/
 ```
 
-### Phase 6: Deploy to Elastic Beanstalk
+### Phase 6: Deploy to EC2
 
-#### Step 13: Install Elastic Beanstalk CLI
+See **[EC2_DEPLOYMENT_GUIDE.md](EC2_DEPLOYMENT_GUIDE.md)** for complete step-by-step EC2 deployment instructions.
+
+**Quick Summary:**
+
+#### Step 13: Create EC2 Instance
+
+1. Go to [EC2 Console](https://console.aws.amazon.com/ec2/)
+2. Click **Launch Instance**
+3. Configure:
+   - **AMI**: Amazon Linux 2023 or Ubuntu 22.04
+   - **Instance type**: `t3.medium` or `t3.large`
+   - **Key pair**: Create or select existing
+   - **Security group**: Allow SSH (22) and HTTP (80)
+4. Launch instance
+
+#### Step 14: Create IAM Role for EC2
+
+1. Go to [IAM Console](https://console.aws.amazon.com/iam/)
+2. Create role → AWS service → EC2
+3. Attach policies:
+   - `AmazonS3ReadOnlyAccess`
+   - `CloudWatchLogsFullAccess`
+4. Role name: `NewsVerify-EC2-Role`
+5. Attach role to EC2 instance
+
+#### Step 15: Set Up Application on EC2
+
+1. SSH into instance
+2. Install Python and dependencies
+3. Upload application files
+4. Configure Gunicorn service
+5. Configure Nginx
+6. Set environment variables
+
+#### Step 16: Start Services
 
 ```bash
-pip install awsebcli
-
-# Verify installation
-eb --version
+# On EC2 instance
+sudo systemctl start newsverify
+sudo systemctl start nginx
+sudo systemctl enable newsverify
+sudo systemctl enable nginx
 ```
 
-#### Step 14: Initialize Elastic Beanstalk
+#### Step 17: Test Application
 
 ```bash
-# Navigate to project directory
-cd /Users/nikhiltamatta/Desktop/NewsVerify
-
-# Initialize EB (will prompt for configuration)
-eb init -p python-3.8 newsverify-app --region us-east-1
-```
-
-This will:
-- Ask for AWS credentials (if not configured)
-- Create `.elasticbeanstalk/` directory
-- Set up configuration files
-
-#### Step 15: Create Elastic Beanstalk Environment
-
-```bash
-# Create environment (takes 5-10 minutes)
-eb create newsverify-env
-
-# This creates:
-# - EC2 instance
-# - Load balancer
-# - Security groups
-# - Auto-scaling group
-```
-
-**Monitor progress:**
-```bash
-eb status
-eb health
-```
-
-#### Step 16: Configure Environment Variables
-
-```bash
-# Set environment variables (replace YOUR_UNIQUE_ID with your bucket name)
-eb setenv S3_BUCKET=newsverify-models-YOUR_UNIQUE_ID \
-          MODEL_KEY=models/model.pkl \
-          VECTORIZER_KEY=models/tfidf_vectorizer.pkl \
-          LABEL_ENCODER_KEY=models/label_encoder.pkl \
-          STAT_FEATURES_KEY=models/stat_feature_names.pkl \
-          AWS_DEFAULT_REGION=us-east-1
-```
-
-#### Step 17: Attach IAM Instance Profile
-
-1. Go to [Elastic Beanstalk Console](https://console.aws.amazon.com/elasticbeanstalk/)
-2. Select your environment: `newsverify-env`
-3. Click "Configuration" → "Security"
-4. Under "IAM instance profile", select `NewsVerify-EC2-Role`
-5. Click "Apply"
-6. Wait for environment update (2-3 minutes)
-
-#### Step 18: Deploy Application
-
-```bash
-# Deploy your application
-eb deploy
-
-# This will:
-# - Package your application
-# - Upload to S3
-# - Deploy to EC2 instances
-# - Restart the application
-```
-
-#### Step 19: Open and Test Application
-
-```bash
-# Open in browser
-eb open
-
-# Or get the URL
-eb status
-```
-
-**Test the application:**
-1. Visit the URL in your browser
-2. Enter a test headline: "Breaking: Scientists discover new planet"
-3. Click "Verify News"
-4. Check if prediction works
-
-**Test API endpoint:**
-```bash
-# Get your app URL
-APP_URL=$(eb status | grep CNAME | awk '{print $2}')
+# Get EC2 public IP
+# Test health endpoint
+curl http://<EC2_IP>/health
 
 # Test prediction
-curl -X POST http://$APP_URL/predict \
+curl -X POST http://<EC2_IP>/predict \
   -H "Content-Type: application/json" \
   -d '{"headline": "Test news headline"}'
 ```
 
+For detailed instructions, see: [EC2_DEPLOYMENT_GUIDE.md](EC2_DEPLOYMENT_GUIDE.md)
+
 ### Phase 7: Monitoring and Maintenance
 
-#### Step 20: View Logs
+#### Step 18: View Logs
 
 ```bash
-# View recent logs
-eb logs
+# On EC2 instance
+# View application logs
+sudo journalctl -u newsverify -f
 
-# View logs in real-time
-eb logs --stream
-
-# View specific log files
-eb logs --all
+# View Nginx logs
+sudo tail -f /var/log/nginx/access.log
+sudo tail -f /var/log/nginx/error.log
 ```
 
-#### Step 21: Monitor with CloudWatch
+#### Step 19: Monitor with CloudWatch
 
 1. Go to [CloudWatch Console](https://console.aws.amazon.com/cloudwatch/)
 2. Click "Metrics" → "All metrics"
@@ -479,12 +454,16 @@ eb logs --all
    - `NewsVerify/Predictions`: Number of predictions
    - `NewsVerify/Confidence`: Confidence scores
    - `NewsVerify/PredictionErrors`: Error count
+4. Also monitor EC2 metrics:
+   - CPU utilization
+   - Memory usage
+   - Network traffic
 
-#### Step 22: Set Up Alarms (Optional)
+#### Step 20: Set Up Alarms (Optional)
 
 1. In CloudWatch → "Alarms" → "Create alarm"
-2. Select metric: `NewsVerify/PredictionErrors`
-3. Set threshold (e.g., > 10 errors in 5 minutes)
+2. Select metric: `NewsVerify/PredictionErrors` or EC2 CPU utilization
+3. Set threshold (e.g., > 10 errors in 5 minutes, or CPU > 80%)
 4. Configure SNS notification (optional)
 
 ---
@@ -516,35 +495,46 @@ aws configure
 aws s3 mb s3://newsverify-models-$(date +%s) --region us-east-1
 ```
 
-### Issue 4: Model Not Loading in Elastic Beanstalk
+### Issue 4: Model Not Loading on EC2
 
 **Problem**: Application shows "Model not available"
 
 **Solutions**:
 1. Check S3 bucket permissions:
    ```bash
-   aws s3 ls s3://newsverify-models-YOUR_UNIQUE_ID/models/
+   aws s3 ls s3://newsverify-models-2026/models/
    ```
-2. Verify environment variables:
+2. Verify environment variables in systemd service:
    ```bash
-   eb printenv
+   # On EC2 instance
+   sudo cat /etc/systemd/system/newsverify.service | grep Environment
    ```
-3. Check IAM instance profile has S3 read permissions
+3. Check IAM role attached to EC2 instance has S3 read permissions
 4. View application logs:
    ```bash
-   eb logs
+   # On EC2 instance
+   sudo journalctl -u newsverify -f
    ```
+5. Verify IAM role is attached: EC2 Console → Instance → Security → IAM role
 
-### Issue 5: Import Errors in Elastic Beanstalk
+### Issue 5: Import Errors on EC2
 
 **Problem**: `ModuleNotFoundError`
 
 **Solutions**:
 1. Check `requirements.txt` includes all dependencies
 2. Verify Python version (3.8+)
-3. Check deployment logs:
+3. Check application logs:
    ```bash
-   eb logs
+   # On EC2 instance
+   sudo journalctl -u newsverify -f
+   ```
+4. Verify virtual environment is activated and dependencies installed
+5. Reinstall dependencies if needed:
+   ```bash
+   # On EC2 instance
+   source venv/bin/activate
+   pip install -r requirements.txt
    ```
 
 ### Issue 6: High Memory Usage / Application Crashes
@@ -580,17 +570,17 @@ aws configure                 # Configure AWS CLI
 aws sts get-caller-identity   # Check AWS identity
 ```
 
-### Elastic Beanstalk Commands
+### EC2 Commands
 ```bash
-eb init                      # Initialize EB
-eb create env-name           # Create environment
-eb deploy                    # Deploy application
-eb status                    # Check status
-eb logs                      # View logs
-eb open                      # Open in browser
-eb terminate env-name        # Delete environment
-eb config                    # Edit configuration
-eb printenv                  # View environment variables
+# SSH into instance
+ssh -i your-key.pem ec2-user@<EC2_IP>
+
+# On EC2 instance:
+sudo systemctl status newsverify    # Check app status
+sudo systemctl restart newsverify   # Restart app
+sudo journalctl -u newsverify -f   # View app logs
+sudo systemctl status nginx        # Check Nginx status
+sudo nginx -t                      # Test Nginx config
 ```
 
 ---
@@ -598,28 +588,30 @@ eb printenv                  # View environment variables
 ## Part 5: Cost Optimization Tips
 
 1. **Stop SageMaker training instances** after training completes
-2. **Use smaller Elastic Beanstalk instances** for development (t3.small)
-3. **Enable auto-scaling** only if needed
+2. **Stop EC2 instance** when not in use (saves costs)
+3. **Use smaller EC2 instances** for development (t3.small)
 4. **Delete unused S3 objects** periodically
-5. **Use Reserved Instances** for production
+5. **Use Reserved Instances** for production (save ~30-40%)
 6. **Set up billing alerts** in AWS Console
 
 **Estimated Monthly Costs:**
 - S3 Storage: ~$0.50-2/month
-- Elastic Beanstalk (t3.small): ~$15-20/month
+- EC2 Instance (t3.medium): ~$30/month
+- EC2 Instance (t3.large): ~$60/month
 - CloudWatch: Free tier (10 custom metrics)
-- **Total**: ~$20-25/month for development
+- **Total**: ~$30-60/month for development
 
 ---
 
 ## Next Steps After Deployment
 
-1. **Custom Domain**: Configure custom domain in Elastic Beanstalk
-2. **HTTPS**: Enable SSL certificate via AWS Certificate Manager
-3. **Auto-scaling**: Configure auto-scaling based on traffic
+1. **Custom Domain**: Point domain to EC2 public IP
+2. **HTTPS**: Set up SSL certificate with Let's Encrypt
+3. **Auto-scaling**: Use Auto Scaling Groups (if needed)
 4. **CI/CD**: Set up automated deployment pipeline with GitHub Actions
 5. **Monitoring Alarms**: Set up CloudWatch alarms for errors
 6. **Backup Strategy**: Regular backups of model files
+7. **Load Balancer**: Add Application Load Balancer (if needed)
 
 ---
 

@@ -15,7 +15,7 @@ This guide walks you through deploying the NewsVerify fake news detection system
 
 ```bash
 # Create S3 bucket for storing data and models
-aws s3 mb s3://newsverify-models --region us-east-1
+aws s3 mb s3://newsverify-models-2026 --region us-east-1
 
 # Or use existing bucket, update bucket name in scripts
 ```
@@ -44,7 +44,7 @@ This creates:
 
 ```bash
 # Upload processed data to S3
-aws s3 cp processed_data/ s3://newsverify-models/training_data/ --recursive
+aws s3 cp processed_data/ s3://newsverify-models-2026/training_data/ --recursive
 ```
 
 ### Step 4: Create SageMaker Execution Role
@@ -63,10 +63,10 @@ aws s3 cp processed_data/ s3://newsverify-models/training_data/ --recursive
 
 ```bash
 python scripts/sagemaker_train.py \
-    --bucket newsverify-models \
+    --bucket newsverify-models-2026 \
     --data-path processed_data \
-    --instance-type ml.m5.xlarge \
-    --role arn:aws:iam::YOUR_ACCOUNT:role/SageMakerExecutionRole
+    --instance-type ml.m4.xlarge \
+    --role arn:aws:iam::587821825538:role/SageMakerExecutionRole
 ```
 
 #### Option B: Manual Training via AWS Console
@@ -75,8 +75,8 @@ python scripts/sagemaker_train.py \
 2. Create training job
 3. Configure:
    - **Algorithm**: XGBoost (built-in)
-   - **Input data**: `s3://newsverify-models/training_data/`
-   - **Output location**: `s3://newsverify-models/models/`
+   - **Input data**: `s3://newsverify-models-2026/training_data/`
+   - **Output location**: `s3://newsverify-models-2026/models/`
    - **Instance type**: `ml.m5.xlarge`
    - **Hyperparameters**: Use defaults or customize
 
@@ -94,93 +94,45 @@ After training completes:
 # The model.pkl should be inside the tar.gz file
 # Extract it and upload to S3:
 
-aws s3 cp models/model.pkl s3://newsverify-models/models/model.pkl
-aws s3 cp processed_data/tfidf_vectorizer.pkl s3://newsverify-models/models/tfidf_vectorizer.pkl
-aws s3 cp processed_data/label_encoder.pkl s3://newsverify-models/models/label_encoder.pkl
-aws s3 cp processed_data/stat_feature_names.pkl s3://newsverify-models/models/stat_feature_names.pkl
+aws s3 cp models/model.pkl s3://newsverify-models-2026/models/model.pkl
+aws s3 cp models/tfidf_vectorizer.pkl s3://newsverify-models-2026/models/tfidf_vectorizer.pkl
+aws s3 cp models/label_encoder.pkl s3://newsverify-models-2026/models/label_encoder.pkl
+aws s3 cp models/stat_feature_names.pkl s3://newsverify-models-2026/models/stat_feature_names.pkl
 ```
 
-### Step 7: Set Up Elastic Beanstalk
+### Step 7: Deploy to EC2
 
-#### Install EB CLI
+See **[EC2_DEPLOYMENT_GUIDE.md](EC2_DEPLOYMENT_GUIDE.md)** for complete step-by-step EC2 deployment instructions.
 
-```bash
-pip install awsebcli
-```
+**Quick Summary:**
 
-#### Initialize Elastic Beanstalk
+1. **Create EC2 Instance**
+   - Go to EC2 Console → Launch Instance
+   - Choose: Amazon Linux 2023 or Ubuntu 22.04
+   - Instance type: `t3.medium` or `t3.large`
+   - Security group: Allow SSH (22) and HTTP (80)
 
-```bash
-# Initialize EB in your project
-eb init -p python-3.8 newsverify-app --region us-east-1
+2. **Create IAM Role for EC2**
+   - IAM → Roles → Create role → EC2
+   - Attach policies: `AmazonS3ReadOnlyAccess`, `CloudWatchLogsFullAccess`
+   - Role name: `NewsVerify-EC2-Role`
+   - Attach role to EC2 instance
 
-# This will prompt for:
-# - AWS credentials (if not configured)
-# - Region (choose same as S3 bucket)
-# - Application name
-```
+3. **Set Up Application on EC2**
+   - SSH into instance
+   - Install Python, dependencies
+   - Upload application files
+   - Configure Gunicorn and Nginx
+   - Set environment variables
 
-#### Create Environment
+4. **Start Services**
+   - Start Gunicorn service
+   - Start Nginx
+   - Test application
 
-```bash
-# Create Elastic Beanstalk environment
-eb create newsverify-env
+For detailed instructions, see: [EC2_DEPLOYMENT_GUIDE.md](EC2_DEPLOYMENT_GUIDE.md)
 
-# This will:
-# - Create EC2 instance
-# - Set up load balancer
-# - Deploy your application
-# - Take 5-10 minutes
-```
-
-#### Configure Environment Variables
-
-```bash
-# Set environment variables for S3 access
-eb setenv S3_BUCKET=newsverify-models \
-          MODEL_KEY=models/model.pkl \
-          VECTORIZER_KEY=models/tfidf_vectorizer.pkl \
-          LABEL_ENCODER_KEY=models/label_encoder.pkl \
-          STAT_FEATURES_KEY=models/stat_feature_names.pkl \
-          AWS_DEFAULT_REGION=us-east-1
-```
-
-#### Set Up IAM Instance Profile
-
-The EC2 instance needs permissions to access S3 and CloudWatch:
-
-1. Go to IAM → Roles
-2. Create role → AWS service → EC2
-3. Attach policies:
-   - `AmazonS3ReadOnlyAccess` (or custom policy for your bucket)
-   - `CloudWatchLogsFullAccess`
-4. Go to Elastic Beanstalk Console → Your Environment → Configuration → Security
-5. Attach the IAM instance profile to your environment
-
-### Step 8: Deploy Application
-
-```bash
-# Deploy to Elastic Beanstalk
-eb deploy
-
-# This will:
-# - Package your application
-# - Upload to S3
-# - Deploy to EC2 instances
-# - Restart the application
-```
-
-### Step 9: Test Deployment
-
-```bash
-# Open the application in browser
-eb open
-
-# Or get the URL
-eb status
-```
-
-### Step 10: Monitor with CloudWatch
+### Step 8: Monitor with CloudWatch
 
 1. Go to CloudWatch Console
 2. View metrics under namespace `NewsVerify`:
@@ -203,13 +155,15 @@ eb logs
 1. Check S3 bucket permissions
 2. Verify model files are uploaded correctly:
    ```bash
-   aws s3 ls s3://newsverify-models/models/
+   aws s3 ls s3://newsverify-models-2026/models/
    ```
-3. Check environment variables:
+3. Check environment variables on EC2:
    ```bash
-   eb printenv
+   # On EC2 instance
+   cat /etc/systemd/system/newsverify.service | grep Environment
    ```
-4. Check IAM instance profile has S3 read permissions
+4. Check IAM role attached to EC2 instance has S3 read permissions
+5. Verify IAM role is attached: EC2 Console → Instance → Security → IAM role
 
 ### Import Errors
 
@@ -218,19 +172,22 @@ eb logs
 **Solutions**:
 1. Check `requirements.txt` includes all dependencies
 2. Verify Python version (3.8+)
-3. Check deployment logs:
+3. Check application logs on EC2:
    ```bash
-   eb logs
+   # On EC2 instance
+   sudo journalctl -u newsverify -f
    ```
+4. Verify virtual environment is activated and dependencies installed
 
 ### High Memory Usage
 
 **Issue**: Application crashes or slow responses
 
 **Solutions**:
-1. Increase instance size in Elastic Beanstalk configuration
-2. Use larger instance type (t3.medium or t3.large)
+1. Increase EC2 instance size (t3.medium → t3.large)
+2. Optimize Gunicorn workers (reduce workers if memory constrained)
 3. Optimize model loading (lazy loading is already implemented)
+4. Monitor with CloudWatch
 
 ### CloudWatch Not Logging
 
@@ -251,35 +208,48 @@ eb logs
 
 ## Next Steps
 
-1. **Custom Domain**: Configure custom domain in Elastic Beanstalk
-2. **HTTPS**: Enable SSL certificate
-3. **Auto-scaling**: Configure auto-scaling based on traffic
+1. **Custom Domain**: Point domain to EC2 public IP
+2. **HTTPS**: Set up SSL certificate with Let's Encrypt
+3. **Auto-scaling**: Use Auto Scaling Groups (if needed)
 4. **Monitoring Alarms**: Set up CloudWatch alarms for errors
 5. **CI/CD**: Set up automated deployment pipeline
+6. **Load Balancer**: Add Application Load Balancer (if needed)
 
 ## Useful Commands
 
+**On EC2 Instance:**
+
 ```bash
-# View environment status
-eb status
+# View application logs
+sudo journalctl -u newsverify -f
 
-# View logs
-eb logs
+# View Nginx logs
+sudo tail -f /var/log/nginx/access.log
+sudo tail -f /var/log/nginx/error.log
 
-# SSH into instance
-eb ssh
+# Restart application
+sudo systemctl restart newsverify
 
-# Terminate environment (careful!)
-eb terminate newsverify-env
+# Restart Nginx
+sudo systemctl restart nginx
 
-# List all environments
-eb list
+# Check service status
+sudo systemctl status newsverify
+sudo systemctl status nginx
 
-# Open application
-eb open
+# Test Nginx configuration
+sudo nginx -t
+```
 
-# View configuration
-eb config
+**From Local Machine:**
+
+```bash
+# SSH into EC2
+ssh -i your-key.pem ec2-user@<EC2_IP>
+
+# Test application
+curl http://<EC2_IP>/health
+curl -X POST http://<EC2_IP>/predict -H "Content-Type: application/json" -d '{"headline":"test"}'
 ```
 
 ## Support

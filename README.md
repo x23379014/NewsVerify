@@ -1,6 +1,6 @@
 # NewsVerify - Fake News Detection System
 
-A cloud-based Machine Learning system for detecting fake news using AWS SageMaker, XGBoost, and Elastic Beanstalk.
+A cloud-based Machine Learning system for detecting fake news using AWS SageMaker, XGBoost, and EC2.
 
 ## Project Overview
 
@@ -10,7 +10,7 @@ This project implements a fake news detection system using:
 - **Services Used**:
   - AWS SageMaker (Model Training)
   - Amazon S3 (Data Storage)
-  - AWS Elastic Beanstalk (Web Application Deployment)
+  - Amazon EC2 (Web Application Deployment)
   - Amazon CloudWatch (Monitoring & Logging)
 
 ## Project Structure
@@ -34,12 +34,9 @@ NewsVerify/
 │   └── eda.ipynb
 ├── models/                 # Local model storage (gitignored)
 ├── processed_data/         # Processed datasets (gitignored)
-├── .ebextensions/         # Elastic Beanstalk configuration
-├── .platform/             # Elastic Beanstalk platform hooks
 ├── data.csv               # Dataset
 ├── application.py         # Flask app entry point
 ├── requirements.txt       # Python dependencies
-├── Procfile              # Elastic Beanstalk process file
 └── README.md
 ```
 
@@ -114,63 +111,35 @@ python scripts/download_model_from_sagemaker.py \
 
 ### 5. Upload Model to S3
 
-After training, upload model files to S3 for Elastic Beanstalk:
+After training, upload model files to S3 for EC2 deployment:
 
 ```bash
 # Upload model and preprocessors
-aws s3 cp models/model.pkl s3://newsverify-models/models/model.pkl
-aws s3 cp processed_data/tfidf_vectorizer.pkl s3://newsverify-models/models/tfidf_vectorizer.pkl
-aws s3 cp processed_data/label_encoder.pkl s3://newsverify-models/models/label_encoder.pkl
-aws s3 cp processed_data/stat_feature_names.pkl s3://newsverify-models/models/stat_feature_names.pkl
+aws s3 cp models/model.pkl s3://newsverify-models-2026/models/model.pkl
+aws s3 cp models/tfidf_vectorizer.pkl s3://newsverify-models-2026/models/tfidf_vectorizer.pkl
+aws s3 cp models/label_encoder.pkl s3://newsverify-models-2026/models/label_encoder.pkl
+aws s3 cp models/stat_feature_names.pkl s3://newsverify-models-2026/models/stat_feature_names.pkl
 ```
 
-### 6. Deploy to Elastic Beanstalk
+### 6. Deploy to EC2
 
-#### Install EB CLI
+See **[EC2_DEPLOYMENT_GUIDE.md](EC2_DEPLOYMENT_GUIDE.md)** for complete EC2 deployment instructions.
 
-```bash
-pip install awsebcli
-```
+**Quick Summary:**
+1. Create EC2 instance (t3.medium or t3.large)
+2. Attach IAM role with S3 read permissions
+3. SSH into instance and set up environment
+4. Upload application files
+5. Configure Gunicorn and Nginx
+6. Start services
 
-#### Initialize Elastic Beanstalk
-
-```bash
-eb init -p python-3.8 newsverify-app --region us-east-1
-```
-
-#### Create Environment
-
-```bash
-eb create newsverify-env
-```
-
-#### Set Environment Variables
-
-```bash
-eb setenv S3_BUCKET=newsverify-models \
-          MODEL_KEY=models/model.pkl \
-          VECTORIZER_KEY=models/tfidf_vectorizer.pkl \
-          LABEL_ENCODER_KEY=models/label_encoder.pkl \
-          STAT_FEATURES_KEY=models/stat_feature_names.pkl
-```
-
-#### Deploy
-
-```bash
-eb deploy
-```
-
-#### Open Application
-
-```bash
-eb open
-```
+For detailed steps, see: [EC2_DEPLOYMENT_GUIDE.md](EC2_DEPLOYMENT_GUIDE.md)
 
 ## Usage
 
 ### Web Interface
 
-1. Navigate to the Elastic Beanstalk URL
+1. Navigate to your EC2 instance URL (or localhost:5001 for local)
 2. Enter a news headline (required)
 3. Optionally enter article body and source URL
 4. Click "Verify News" to get prediction
@@ -178,7 +147,7 @@ eb open
 ### API Endpoint
 
 ```bash
-curl -X POST https://your-app.elasticbeanstalk.com/predict \
+curl -X POST http://your-ec2-ip/predict \
   -H "Content-Type: application/json" \
   -d '{
     "headline": "Your news headline here",
@@ -233,33 +202,37 @@ CloudWatch metrics are automatically logged:
 
 View logs:
 ```bash
-eb logs
+# On EC2 instance
+sudo journalctl -u newsverify -f
+sudo tail -f /var/log/nginx/access.log
 ```
 
 ## Cost Estimation
 
-- **SageMaker Training**: ~$2-5 per training job (ml.m5.xlarge)
+- **SageMaker Training**: ~$2-5 per training job (ml.m4.xlarge)
 - **S3 Storage**: ~$0.023/GB/month
-- **Elastic Beanstalk**: ~$15-30/month (t3.small instance)
+- **EC2 Instance**: ~$30-60/month (t3.medium to t3.large)
 - **CloudWatch**: Free tier includes 10 custom metrics
 
-**Total Estimated Cost**: ~$20-50 for development and testing
+**Total Estimated Cost**: ~$35-70 for development and testing
 
 ## Troubleshooting
 
 ### Model not loading
 - Check S3 bucket permissions
 - Verify model files are uploaded correctly
-- Check environment variables in Elastic Beanstalk
+- Check environment variables on EC2 instance
+- Verify IAM role has S3 read permissions
 
 ### Import errors
 - Ensure all dependencies are in `requirements.txt`
 - Check Python version compatibility
+- Verify virtual environment is activated
 
 ### Deployment issues
-- Check `.ebextensions` configuration
-- Verify `Procfile` format
-- Review Elastic Beanstalk logs: `eb logs`
+- Check Gunicorn service status: `sudo systemctl status newsverify`
+- Check Nginx configuration: `sudo nginx -t`
+- Review application logs: `sudo journalctl -u newsverify -f`
 
 ## Development
 
@@ -267,7 +240,7 @@ eb logs
 
 ```bash
 # Run Flask app locally
-export S3_BUCKET=newsverify-models
+export S3_BUCKET=newsverify-models-2026
 export MODEL_KEY=models/model.pkl
 export VECTORIZER_KEY=models/tfidf_vectorizer.pkl
 export LABEL_ENCODER_KEY=models/label_encoder.pkl
@@ -276,7 +249,7 @@ export STAT_FEATURES_KEY=models/stat_feature_names.pkl
 python application.py
 ```
 
-Visit `http://localhost:5000`
+Visit `http://localhost:5001` (port changed to avoid macOS AirPlay conflict)
 
 ## License
 

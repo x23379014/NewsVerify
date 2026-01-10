@@ -21,15 +21,15 @@ Before deploying, ensure your model files are in S3:
 
 ```bash
 # Upload model files to S3
-aws s3 cp models/model.pkl s3://newsverify-models/models/model.pkl
-aws s3 cp processed_data/tfidf_vectorizer.pkl s3://newsverify-models/models/tfidf_vectorizer.pkl
-aws s3 cp processed_data/label_encoder.pkl s3://newsverify-models/models/label_encoder.pkl
-aws s3 cp processed_data/stat_feature_names.pkl s3://newsverify-models/models/stat_feature_names.pkl
+aws s3 cp models/model.pkl s3://newsverify-models-2026/models/model.pkl
+aws s3 cp models/tfidf_vectorizer.pkl s3://newsverify-models-2026/models/tfidf_vectorizer.pkl
+aws s3 cp models/label_encoder.pkl s3://newsverify-models-2026/models/label_encoder.pkl
+aws s3 cp models/stat_feature_names.pkl s3://newsverify-models-2026/models/stat_feature_names.pkl
 ```
 
 ### 2. Create S3 Bucket (if not exists)
 ```bash
-aws s3 mb s3://newsverify-models --region us-east-1
+aws s3 mb s3://newsverify-models-2026 --region us-east-1
 ```
 
 ### 3. Set Up IAM Permissions
@@ -37,27 +37,26 @@ The EC2 instance needs an IAM role with:
 - **S3 Read Access** to your bucket
 - **CloudWatch Logs Write Access**
 
-Create IAM role and attach to Elastic Beanstalk environment.
+Create IAM role and attach to EC2 instance.
 
 ### 4. Configure Environment Variables
-Set these in Elastic Beanstalk:
+Set these on EC2 instance (in systemd service or .env file):
 ```bash
-eb setenv S3_BUCKET=newsverify-models \
-          MODEL_KEY=models/model.pkl \
-          VECTORIZER_KEY=models/tfidf_vectorizer.pkl \
-          LABEL_ENCODER_KEY=models/label_encoder.pkl \
-          STAT_FEATURES_KEY=models/stat_feature_names.pkl \
-          AWS_DEFAULT_REGION=us-east-1
+S3_BUCKET=newsverify-models-2026
+MODEL_KEY=models/model.pkl
+VECTORIZER_KEY=models/tfidf_vectorizer.pkl
+LABEL_ENCODER_KEY=models/label_encoder.pkl
+STAT_FEATURES_KEY=models/stat_feature_names.pkl
+AWS_DEFAULT_REGION=us-east-1
 ```
 
 ## Files Ready for Deployment
 
 ### ✅ Configuration Files
-- `.ebextensions/python.config` - Python/WSGI configuration
-- `.ebextensions/01_packages.config` - System packages
-- `.ebextensions/02_environment.config` - Environment variables
-- `.platform/hooks/postdeploy/01_install_dependencies.sh` - Post-deploy script
-- `Procfile` - Process configuration
+- `ec2-setup.sh` - EC2 setup script
+- `EC2_DEPLOYMENT_GUIDE.md` - Deployment guide
+- Systemd service file (created on EC2)
+- Nginx configuration (created on EC2)
 
 ### ✅ Application Files
 - `application.py` - Flask app entry point
@@ -70,49 +69,51 @@ eb setenv S3_BUCKET=newsverify-models \
 - `models/` - Not needed (models in S3)
 - `notebooks/` - For development only
 - `.git/` - Version control
+- `venv/` - Virtual environment (recreate on EC2)
 
 ## Deployment Steps
 
-1. **Initialize EB** (if not done):
-   ```bash
-   eb init -p python-3.8 newsverify-app --region us-east-1
-   ```
+See **[EC2_DEPLOYMENT_GUIDE.md](EC2_DEPLOYMENT_GUIDE.md)** for complete deployment steps.
 
-2. **Create Environment**:
-   ```bash
-   eb create newsverify-env
-   ```
+**Quick Summary:**
 
-3. **Set Environment Variables**:
-   ```bash
-   eb setenv S3_BUCKET=newsverify-models \
-             MODEL_KEY=models/model.pkl \
-             VECTORIZER_KEY=models/tfidf_vectorizer.pkl \
-             LABEL_ENCODER_KEY=models/label_encoder.pkl \
-             STAT_FEATURES_KEY=models/stat_feature_names.pkl \
-             AWS_DEFAULT_REGION=us-east-1
-   ```
+1. **Create EC2 Instance**:
+   - EC2 Console → Launch Instance
+   - Choose Amazon Linux or Ubuntu
+   - Instance type: t3.medium or t3.large
 
-4. **Deploy**:
+2. **Create IAM Role**:
+   - IAM → Roles → Create role → EC2
+   - Attach S3 and CloudWatch policies
+   - Attach to EC2 instance
+
+3. **Set Up Application**:
+   - SSH into instance
+   - Run setup script or follow manual steps
+   - Upload application files
+   - Configure Gunicorn and Nginx
+
+4. **Start Services**:
    ```bash
-   eb deploy
+   sudo systemctl start newsverify
+   sudo systemctl start nginx
    ```
 
 5. **Check Logs**:
    ```bash
-   eb logs
+   sudo journalctl -u newsverify -f
    ```
 
 ## Post-Deployment Verification
 
 1. **Health Check**:
    ```bash
-   curl https://your-app.elasticbeanstalk.com/health
+   curl http://<EC2_IP>/health
    ```
 
 2. **Test Prediction**:
    ```bash
-   curl -X POST https://your-app.elasticbeanstalk.com/predict \
+   curl -X POST http://<EC2_IP>/predict \
      -H "Content-Type: application/json" \
      -d '{"headline": "Test news headline"}'
    ```
@@ -126,8 +127,10 @@ eb setenv S3_BUCKET=newsverify-models \
 ### Issue: Model not loading
 **Solution**: 
 - Verify S3 bucket permissions
-- Check environment variables are set
+- Check environment variables are set in systemd service
 - Verify model files exist in S3
+- Check IAM role attached to EC2 instance
+- View application logs: `sudo journalctl -u newsverify -f`
 
 ### Issue: Import errors
 **Solution**:
@@ -136,9 +139,10 @@ eb setenv S3_BUCKET=newsverify-models \
 
 ### Issue: Timeout errors
 **Solution**:
-- Increase instance size
+- Increase EC2 instance size
 - Check model loading time
-- Review CloudWatch logs
+- Review application logs: `sudo journalctl -u newsverify -f`
+- Increase Gunicorn timeout in systemd service
 
 ## Notes
 
@@ -146,4 +150,6 @@ eb setenv S3_BUCKET=newsverify-models \
 - If local models not found, it will download from S3
 - CloudWatch logging is optional (gracefully handles if not available)
 - All paths are relative or use environment variables
+- EC2 deployment uses Gunicorn + Nginx (not Elastic Beanstalk)
+- See EC2_DEPLOYMENT_GUIDE.md for complete deployment instructions
 
