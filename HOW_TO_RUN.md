@@ -23,7 +23,7 @@ venv\Scripts\activate     # On Windows
 pip install -r requirements.txt
 
 # Download NLTK data (required for text processing)
-python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords'); nltk.download('wordnet')"
+python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords'); nltk.download('wordnet'); nltk.download('punkt_tab', quiet=True)"
 ```
 
 ### Step 3: Run the Application
@@ -32,11 +32,11 @@ python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords'); nltk
 python application.py
 ```
 
-The application will start on: **http://localhost:5000**
+The application will start on: **http://localhost:5001** (port changed to avoid macOS AirPlay conflict on port 5000)
 
 ### Step 4: Open in Browser
 
-Open your browser and go to: **http://localhost:5000**
+Open your browser and go to: **http://localhost:5001**
 
 You should see the NewsVerify web interface where you can:
 - Enter a news headline
@@ -78,19 +78,19 @@ source venv/bin/activate
 python application.py
 
 # Or with debug mode (for development)
-python -c "from app import create_app; app = create_app(); app.run(debug=True, host='0.0.0.0', port=5000)"
+python -c "from app import create_app; app = create_app(); app.run(debug=True, host='0.0.0.0', port=5001)"
 ```
 
-**Access at:** http://localhost:5000
+**Access at:** http://localhost:5001 (port changed to avoid macOS AirPlay conflict)
 
 ### 2. Test API Endpoint Directly
 
 ```bash
 # Test health endpoint
-curl http://localhost:5000/health
+curl http://localhost:5001/health
 
 # Test prediction endpoint
-curl -X POST http://localhost:5000/predict \
+curl -X POST http://localhost:5001/predict \
   -H "Content-Type: application/json" \
   -d '{
     "headline": "Breaking: Scientists discover new planet",
@@ -141,36 +141,68 @@ chmod +x run_sagemaker_training.sh
 
 ### Deploy to EC2
 
-See **[EC2_DEPLOYMENT_GUIDE.md](EC2_DEPLOYMENT_GUIDE.md)** for complete step-by-step instructions.
-
 **Quick Summary:**
 
 1. **Create EC2 Instance**
    - Go to EC2 Console → Launch Instance
-   - Choose: Amazon Linux 2023 or Ubuntu 22.04
-   - Instance type: `t3.medium` or `t3.large`
+   - Choose: Amazon Linux 2023
+   - Instance type: `t3.medium` (recommended), or `t3.large` for higher performance
    - Security group: Allow SSH (22) and HTTP (80)
+   - Attach IAM role with S3 read permissions
 
-2. **Set Up Application**
-   - SSH into instance
-   - Install Python and dependencies
-   - Upload application files
-   - Configure Gunicorn and Nginx
-   - Set environment variables
+2. **Set Up Application on EC2**
+   ```bash
+   # SSH into instance
+   ssh -i your-key.pem ec2-user@<EC2_IP>
+   
+   # Install Python, Nginx, and dependencies
+   sudo dnf install python3.9 python3-pip nginx -y
+   
+   # Navigate to application directory
+   cd /home/ec2-user/newsverify
+   
+   # Create virtual environment
+   python3.9 -m venv venv
+   source venv/bin/activate
+   
+   # Install dependencies
+   pip install -r requirements.txt
+   
+   # Download NLTK data
+   python -c "import nltk; nltk.download('punkt_tab', quiet=True)"
+   
+   # Fix permissions for static files
+   chmod 755 /home/ec2-user/
+   chmod 644 /home/ec2-user/newsverify/app/static/*
+   ```
 
-3. **Start Services**
+3. **Configure Gunicorn and Nginx**
+   - Create systemd service for Gunicorn
+   - Configure Nginx as reverse proxy
+   - Ensure `/static` location block comes before `/` in Nginx config
+
+4. **Start Services**
    ```bash
    # On EC2 instance
    sudo systemctl start newsverify
+   sudo systemctl enable newsverify
    sudo systemctl start nginx
+   sudo systemctl enable nginx
    ```
 
-4. **Test Application**
+5. **Test Application**
    ```bash
+   # Test health endpoint
    curl http://<EC2_IP>/health
+   
+   # Test static files
+   curl http://<EC2_IP>/static/style.css
    ```
 
-For detailed instructions, see: [EC2_DEPLOYMENT_GUIDE.md](EC2_DEPLOYMENT_GUIDE.md)
+**Important Notes:**
+- Model files are automatically loaded from S3 bucket: `newsverify-models-2026`
+- Ensure `/home/ec2-user/` has `755` permissions for Nginx to access static files
+- Static files should be at `/home/ec2-user/newsverify/app/static/`
 
 ---
 
@@ -199,16 +231,20 @@ pip install -r requirements.txt
 
 **Solution:** Download NLTK data:
 ```bash
-python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords'); nltk.download('wordnet')"
+# For local development
+python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords'); nltk.download('wordnet'); nltk.download('punkt_tab', quiet=True)"
+
+# For EC2 deployment
+python -c "import nltk; nltk.download('punkt_tab', quiet=True)"
 ```
 
 ### Issue: Port Already in Use
 
-**Solution:** Use a different port:
+**Solution:** The application now uses port 5001 by default to avoid macOS AirPlay conflict. If you need to change it:
 ```bash
-# Edit application.py, change port from 5000 to 5001
-# Or kill the process using port 5000
-lsof -ti:5000 | xargs kill  # Mac/Linux
+# Edit application.py, change port from 5001 to another port
+# Or kill the process using the port
+lsof -ti:5001 | xargs kill  # Mac/Linux
 ```
 
 ### Issue: AWS Credentials Not Found
@@ -217,6 +253,23 @@ lsof -ti:5000 | xargs kill  # Mac/Linux
 ```bash
 aws configure
 # Enter your Access Key ID, Secret Access Key, region, and output format
+```
+
+### Issue: Static Files (CSS/JS) Not Loading on EC2
+
+**Solution:** Fix permissions and Nginx configuration:
+```bash
+# Fix parent directory permissions
+chmod 755 /home/ec2-user/
+
+# Fix file permissions
+chmod 644 /home/ec2-user/newsverify/app/static/*
+
+# Ensure Nginx config has /static location before / location
+# Test static file access
+curl http://localhost/static/style.css
+
+# Hard refresh browser: Cmd+Shift+R (Mac) or Ctrl+Shift+R (Windows)
 ```
 
 ---
@@ -260,7 +313,7 @@ aws configure
 
 ## 🎨 Web Interface Features
 
-The web interface (`http://localhost:5000`) includes:
+The web interface (`http://localhost:5001` for local, or `http://<EC2_IP>` for production) includes:
 
 - **Headline Input** (required)
 - **Body Text Input** (optional)
@@ -305,8 +358,8 @@ For production, use:
    ```
 
 2. **EC2** (recommended):
-   - Follow [EC2_DEPLOYMENT_GUIDE.md](EC2_DEPLOYMENT_GUIDE.md)
    - Use Gunicorn + Nginx on EC2 instance
+   - See "Running on AWS (EC2)" section above for deployment steps
 
 3. **Docker** (if containerizing):
    ```bash
@@ -321,7 +374,16 @@ For production, use:
 1. **Train a new model**: Use `scripts/train_local.py` or SageMaker
 2. **Improve accuracy**: Modify preprocessing in `scripts/preprocess_data.py`
 3. **Add features**: Update feature extraction in `app/routes.py`
-4. **Deploy to AWS**: Follow AWS deployment guide in `COMPLETE_SETUP_GUIDE.md`
+4. **Deploy to AWS**: Follow EC2 deployment steps in this guide
+
+## 🔄 Recent Changes
+
+- **Port Configuration**: Local development now uses port 5001 (to avoid macOS AirPlay conflict)
+- **S3 Bucket**: Updated to `newsverify-models-2026`
+- **SageMaker Instance**: Using `ml.m4.xlarge` (Free Tier alternative)
+- **EC2 Deployment**: Successfully deployed with Nginx and Gunicorn
+- **NLTK Data**: Added `punkt_tab` resource for compatibility
+- **Static Files**: Configured Nginx to serve static files correctly
 
 ---
 
