@@ -93,8 +93,6 @@ python scripts/sagemaker_train.py \
     --role <your-sagemaker-role-arn>
 ```
 
-**Note:** Using `ml.m4.xlarge` instance type (Free Tier eligible alternative to `ml.m5.xlarge`)
-
 #### Option B: Manual SageMaker Training
 
 1. Upload processed data to S3:
@@ -163,7 +161,7 @@ aws s3 cp models/stat_feature_names.pkl s3://newsverify-models-2026/models/stat_
 
 ### Web Interface
 
-1. Navigate to your EC2 instance public IP (e.g., `http://your-ec2-ip`) or `http://localhost:5001` for local development
+1. Navigate to your EC2 instance public IP (e.g., `http://50.19.160.109/`) or `http://localhost:5001` for local development
 2. Enter a news headline (required)
 3. Optionally enter article body and source URL
 4. Click "Verify News" to get prediction
@@ -172,36 +170,6 @@ aws s3 cp models/stat_feature_names.pkl s3://newsverify-models-2026/models/stat_
 - The application is deployed on EC2 and accessible via public IP
 - Static files (CSS/JS) are served by Nginx
 - Model is loaded from S3 bucket: `newsverify-models-2026`
-
-### API Endpoint
-
-**Health Check:**
-```bash
-curl http://your-ec2-ip/health
-```
-
-**Prediction:**
-```bash
-curl -X POST http://your-ec2-ip/predict \
-  -H "Content-Type: application/json" \
-  -d '{
-    "headline": "Your news headline here",
-    "body": "Article body text (optional)",
-    "url": "https://example.com (optional)"
-  }'
-```
-
-Response:
-```json
-{
-  "prediction": "FAKE" or "REAL",
-  "confidence": 0.95,
-  "probabilities": {
-    "fake": 0.05,
-    "real": 0.95
-  }
-}
-```
 
 ## Model Details
 
@@ -241,71 +209,6 @@ View logs:
 sudo journalctl -u newsverify -f
 sudo tail -f /var/log/nginx/access.log
 ```
-
-## Cost Estimation
-
-- **SageMaker Training**: ~$2-5 per training job (ml.m4.xlarge)
-- **S3 Storage**: ~$0.023/GB/month
-- **EC2 Instance**: 
-  - t3.medium: ~$30/month (recommended)
-  - t3.large: ~$60/month (for higher performance)
-- **CloudWatch**: Free tier includes 10 custom metrics
-
-**Total Estimated Cost**: 
-- Development/Production: ~$35-70/month (using t3.medium to t3.large)
-
-## Troubleshooting
-
-### Model not loading
-- Check S3 bucket permissions
-- Verify model files are uploaded correctly
-- Check environment variables on EC2 instance
-- Verify IAM role has S3 read permissions
-
-### Import errors
-- Ensure all dependencies are in `requirements.txt`
-- Check Python version compatibility
-- Verify virtual environment is activated
-
-### Deployment issues
-- Check Gunicorn service status: `sudo systemctl status newsverify`
-- Check Nginx configuration: `sudo nginx -t`
-- Review application logs: `sudo journalctl -u newsverify -f`
-- Check Nginx error logs: `sudo tail -f /var/log/nginx/error.log`
-
-### Static files (CSS/JS) not loading
-- Ensure `/home/ec2-user/` has `755` permissions: `chmod 755 /home/ec2-user/`
-- Verify static files are readable: `chmod 644 /home/ec2-user/newsverify/app/static/*`
-- Check Nginx config has `/static` location block before `/` location
-- Test static file access: `curl http://localhost/static/style.css`
-- Hard refresh browser: `Cmd+Shift+R` (Mac) or `Ctrl+Shift+R` (Windows)
-
-## Development
-
-### Local Testing
-
-```bash
-# Run Flask app locally
-export S3_BUCKET=newsverify-models-2026
-export MODEL_KEY=models/model.pkl
-export VECTORIZER_KEY=models/tfidf_vectorizer.pkl
-export LABEL_ENCODER_KEY=models/label_encoder.pkl
-export STAT_FEATURES_KEY=models/stat_feature_names.pkl
-export AWS_DEFAULT_REGION=us-east-1
-
-python application.py
-```
-
-Visit `http://localhost:5001` (port changed to avoid macOS AirPlay conflict on port 5000)
-
-### Recent Changes
-
-- **Deployment**: Successfully deployed to EC2 with Nginx and Gunicorn
-- **S3 Bucket**: Updated to `newsverify-models-2026`
-- **Instance Type**: Using `ml.m4.xlarge` for SageMaker training (Free Tier alternative)
-- **Port Configuration**: Local development uses port 5001, production uses port 5000 via Gunicorn
-- **Static Files**: Configured Nginx to serve static files from `/app/static/`
-- **NLTK Data**: Added `punkt_tab` resource download for NLTK compatibility
 
 ## License
 
